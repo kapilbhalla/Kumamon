@@ -1,0 +1,78 @@
+package com.example.kumamon.data
+
+import android.util.Log
+import com.aallam.openai.api.chat.ChatMessage
+import com.aallam.openai.api.chat.ChatRole
+import com.aallam.openai.api.chat.chatCompletionRequest
+import com.aallam.openai.api.chat.chatMessage
+import com.aallam.openai.api.http.Timeout
+import com.aallam.openai.api.model.ModelId
+import com.aallam.openai.client.OpenAI
+import kotlin.time.Duration.Companion.seconds
+
+interface LangMod {
+
+    suspend fun init(apiKey: String, modId: String): LangMod
+
+    suspend fun converse(incomingMsg: String): String
+
+    suspend fun fineTune(filename: String)
+
+}
+
+object OaiModel: LangMod {
+
+    const val API_KEY = ""
+    const val MODEL_ID = "gpt-3.5-turbo-1106"
+
+    private var model: OpenAI?= null
+    private var modelId: ModelId? = null
+    private val chatMessages = mutableListOf<ChatMessage>()
+
+    // Should be called once at application start
+    override suspend fun init(apiKey: String, modId: String): LangMod {
+        if (model != null) return this
+        model = OpenAI(
+            token = apiKey,
+            timeout = Timeout(socket = 10.seconds)
+        )
+        modelId = ModelId(modId)
+        val chatResponse = receiveResponse(
+            "Pretend you are Kumamon, the mascot of Kumamoto in your responses."
+        )
+        Log.d("TRACE", "Response: ${chatResponse.content.orEmpty()}")
+        return this
+    }
+
+    override suspend fun converse(incomingMsg: String): String {
+        val chatResponse = receiveResponse(incomingMsg)
+        return chatResponse.content?:"Sorry, I don't know"
+    }
+
+    private suspend fun receiveResponse(incomingMsg: String): ChatMessage {
+        chatMessages.add(
+            chatMessage {
+                role = ChatRole.User
+                content = incomingMsg
+            }
+        )
+        val request = chatCompletionRequest {
+            model = modelId
+            messages = chatMessages
+        }
+        model?.let {
+            val response = it.chatCompletion(request)
+            val responseMsg = response.choices.first().message
+            chatMessages.add(responseMsg)
+            return responseMsg
+        }
+        throw IllegalStateException("model was not inititalized properly")
+    }
+
+    // Should be called once at application start
+    override suspend fun fineTune(filename: String) {
+        if (model != null) return
+
+    }
+
+}
